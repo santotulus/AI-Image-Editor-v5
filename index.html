@@ -420,6 +420,15 @@
                                     <label class="block text-lg font-semibold mb-3 text-slate-700">2. Kustomisasi</label>
                                     <fieldset id="model-guided-options" class="space-y-4">
                                          <div>
+                                            <label for="model-gender" class="block text-sm font-medium text-slate-600 mb-1">Gender Model</label>
+                                            <select id="model-gender" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                                <option value="auto">Otomatis (Deteksi dari Foto)</option>
+                                                <option value="man">Laki-laki</option>
+                                                <option value="woman">Perempuan</option>
+                                            </select>
+                                            <p class="text-xs text-slate-500 mt-1">Pilih 'Otomatis' untuk analisa AI, atau pilih manual untuk akurasi.</p>
+                                        </div>
+                                         <div>
                                             <label for="model-photo-type" class="block text-sm font-medium text-slate-600 mb-1">Jenis Foto</label>
                                             <select id="model-photo-type" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                                                 <option value="professional studio photo, clean background, high-end studio lighting">Model Photo Studio</option>
@@ -460,8 +469,17 @@
                                     </fieldset>
                                 </div>
 
-                                <!-- 3. Jumlah Gambar -->
+                                <!-- 3. Jumlah & Rasio -->
                                 <div class="mb-6">
+                                     <div class="mb-4">
+                                        <label for="model-aspect-ratio" class="block text-sm font-medium text-slate-600 mb-1">Rasio Aspek (Ukuran Foto)</label>
+                                        <select id="model-aspect-ratio" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                            <option value="1:1">1:1 (Persegi)</option>
+                                            <option value="3:4">3:4 (Portrait Standar)</option>
+                                            <option value="9:16">9:16 (Story/Reels)</option>
+                                            <option value="16:9">16:9 (Landscape)</option>
+                                        </select>
+                                    </div>
                                     <label for="model-image-count" class="block text-lg font-semibold mb-2 text-slate-700">3. Jumlah Gambar</label>
                                     <select id="model-image-count" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                                         <option value="6">6 Gambar (Cepat)</option>
@@ -488,16 +506,26 @@
                                 <h2 class="text-xl font-semibold text-slate-700">Hasil Foto Model Anda</h2>
                                 <button id="model-download-all-btn" class="hidden px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">Download Semua</button>
                              </div>
-                             <div id="model-page-status" class="mb-4 text-center p-4 min-h-[400px] flex items-center justify-center bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 text-slate-500">
-                                <div>
-                                    <svg class="w-12 h-12 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-                                    </svg>
-                                    <p>Unggah foto untuk memulai.</p>
-                                </div>
-                             </div>
-                             <div id="model-page-output-container" class="hidden w-full grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                <!-- results here -->
+                             <div id="model-page-result-box" class="results-grid flex items-center justify-center bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 min-h-[400px]">
+                                 <!-- Initial Placeholder -->
+                                 <div id="model-page-placeholder" class="text-center text-slate-500">
+                                    <svg class="w-12 h-12 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>
+                                     <p>Hasil akan muncul di sini.</p>
+                                 </div>
+                                 <!-- Loading Spinner -->
+                                 <div id="model-page-loader" class="hidden text-center text-slate-600">
+                                      <div class="spinner w-12 h-12 mx-auto rounded-full border-4 border-slate-300"></div>
+                                      <p class="mt-4 text-lg">Menghasilkan foto model...</p>
+                                 </div>
+                                 <!-- Error Message -->
+                                 <div id="model-page-error-msg" class="hidden text-center text-red-600 bg-red-100 p-4 rounded-lg">
+                                     <p>Oops! Terjadi kesalahan.</p>
+                                     <p id="model-page-error-details" class="text-sm mt-1"></p>
+                                 </div>
+                                 <!-- Results Grid -->
+                                 <div id="model-page-output-container" class="hidden w-full grid grid-cols-2 sm:grid-cols-3 gap-4 p-4">
+                                    <!-- results here -->
+                                 </div>
                              </div>
                         </div>
                     </div>
@@ -715,6 +743,15 @@
                                <!-- 2. Kustomisasi -->
                                <div class="mb-6 space-y-4">
                                    <h2 class="block text-lg font-semibold text-slate-700">2. Kustomisasi</h2>
+                                    <div class="mb-4">
+                                        <label for="travel-aspect-ratio" class="block text-sm font-medium text-slate-600 mb-1">Rasio Aspek (Ukuran Foto)</label>
+                                        <select id="travel-aspect-ratio" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                            <option value="1:1">1:1 (Persegi)</option>
+                                            <option value="3:4">3:4 (Portrait Standar)</option>
+                                            <option value="9:16">9:16 (Story/Reels)</option>
+                                            <option value="16:9">16:9 (Landscape)</option>
+                                        </select>
+                                    </div>
                                     <div>
                                        <label for="travel-bg-select" class="block text-sm font-medium text-slate-600 mb-1">Pilih Latar Ikon Dunia</label>
                                        <select id="travel-bg-select" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
@@ -859,6 +896,15 @@
                                <!-- 2. Kustomisasi -->
                                <div class="mb-6 space-y-4">
                                    <h2 class="block text-lg font-semibold text-slate-700">2. Kustomisasi Preferensi</h2>
+                                   <div class="mb-4">
+                                        <label for="prewedding-aspect-ratio" class="block text-sm font-medium text-slate-600 mb-1">Rasio Aspek (Ukuran Foto)</label>
+                                        <select id="prewedding-aspect-ratio" class="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                            <option value="1:1">1:1 (Persegi)</option>
+                                            <option value="3:4">3:4 (Portrait Standar)</option>
+                                            <option value="9:16">9:16 (Story/Reels)</option>
+                                            <option value="16:9">16:9 (Landscape)</option>
+                                        </select>
+                                    </div>
                                     <div>
                                        <label class="block text-sm font-medium text-slate-600 mb-2">Lokasi / Suasana</label>
                                         <div class="flex space-x-4">

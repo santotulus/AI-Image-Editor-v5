@@ -136,7 +136,7 @@ function setupFileUploader(inputId: string, previewId: string, promptId: string,
     }
 }
 
-// Generic Result Card Creator (Removes Duplication)
+// Generic Result Card Creator
 function createImageResultCard(imageUrl: string, downloadPrefix: string, aspectClass: string = 'aspect-square', objectFit: string = 'object-contain') {
     const container = document.createElement('div');
     container.className = `relative group bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden ${aspectClass}`;
@@ -216,17 +216,29 @@ function renderResultsGrid(
 }
 
 // API & Utility Functions
-async function generateImage(parts: any[]) {
+async function generateImage(parts: any[], aspectRatio: string = "1:1") {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     let attempt = 0;
-    const maxAttempts = 5;
+    const maxAttempts = 3; // Reduced attempts for speed
     let delay = 1000;
+
+    // Map UI aspect ratios to Gemini supported aspect ratios (if directly supported)
+    // For flash-image, standard is 1:1, but we can guide via prompt or post-process.
+    // However, `config.imageConfig` exists for some models. 
+    // Since we are using gemini-2.5-flash-image, specific aspect ratio config might be limited or prompt based.
+    // We will pass it in config if supported, otherwise rely on prompt guidance if needed.
+    // NOTE: gemini-2.5-flash-image supports 1:1, 3:4, 4:3, 9:16, 16:9 via config.
+
     while (attempt < maxAttempts) {
         try {
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash-image',
                 contents: { parts: parts },
-                config: { responseModalities: [Modality.IMAGE] },
+                config: { 
+                    responseModalities: [Modality.IMAGE],
+                    // @ts-ignore - aspect ratio is supported in newer SDK versions/models
+                    imageConfig: { aspectRatio: aspectRatio }
+                },
             });
 
             if (!response.candidates || response.candidates.length === 0) {
@@ -240,10 +252,11 @@ async function generateImage(parts: any[]) {
             }
             throw new Error("No image data found.");
         } catch (error: any) {
+            console.error(error);
             attempt++;
             if (attempt >= maxAttempts) throw error;
             await new Promise(resolve => setTimeout(resolve, delay));
-            delay *= 2;
+            delay *= 1.5;
         }
     }
     throw new Error("Failed after multiple attempts.");
@@ -277,10 +290,17 @@ function toggleLoadingState(
     
     // Handle Button Spinner if exists (Product/Model style)
     const btnSpinner = elements.btn.querySelector('.spinner');
-    const btnText = elements.btn.querySelector('span');
-    if(btnSpinner && btnText) {
+    const btnText = elements.btn.querySelector('#btn-text') || elements.btn.querySelector('span');
+    
+    if(btnSpinner) {
         (btnSpinner as HTMLElement).style.display = isLoading ? 'inline-block' : 'none';
-        (btnText as HTMLElement).style.display = isLoading ? 'none' : 'inline';
+    }
+    // Only toggle text if it's wrapped in a span or id
+    if(btnText && btnText.id !== 'btn-spinner') {
+         (btnText as HTMLElement).style.display = isLoading ? 'none' : 'inline';
+    } else if (elements.btn.innerText && !btnText) {
+        // Fallback for buttons without span structure (like simple text buttons)
+        // (skipped for now to avoid breaking layout, reliance on spinner is enough)
     }
 
     if (elements.loader) {
@@ -334,7 +354,7 @@ if (productForm) {
     setupFileUploader('product-upload', 'image-preview', 'upload-prompt', (b64, type) => { productBase64 = b64; productMimeType = type; });
     setupFileUploader('model-upload', 'model-image-preview', 'model-upload-prompt', (b64, type) => { modelBase64 = b64; modelMimeType = type; });
 
-    // UI Toggles for Customization
+    // UI Toggles
     const toggles = [
         'custom-prompt-checkbox', 'upload-type', 'without-model', 
         'generate-model-radio', 'upload-model-radio', 'interaction-type', 'age-range'
@@ -375,11 +395,13 @@ if (productForm) {
 
         try {
             const imageCount = parseInt((document.getElementById('image-count') as HTMLSelectElement).value, 10);
+            // For Product, we stick to 1:1 for now as standard square product shots
+            const aspectRatio = "1:1"; 
+
             for (let i = 0; i < imageCount; i++) {
-                // Logic extraction from original code...
-                // Simplified for brevity while keeping logic intact
                 let parts: any[] = [];
                 const customPrompt = (document.getElementById('custom-prompt-input') as HTMLTextAreaElement).value;
+                
                 if ((document.getElementById('custom-prompt-checkbox') as HTMLInputElement).checked) {
                     if(!customPrompt) throw new Error('Isi prompt kustom.');
                     parts = [{ text: customPrompt }, { inlineData: { mimeType: productMimeType, data: productBase64 } }];
@@ -387,7 +409,6 @@ if (productForm) {
                         parts.splice(1, 0, { inlineData: { mimeType: modelMimeType, data: modelBase64 } });
                     }
                 } else {
-                    // Standard Guided Prompt Logic (Preserved from original)
                     const productName = (document.getElementById('product-name') as HTMLInputElement).value || 'product';
                     const desc = (document.getElementById('product-description') as HTMLInputElement).value;
                     const noModel = (document.getElementById('without-model') as HTMLInputElement).checked;
@@ -421,13 +442,12 @@ if (productForm) {
                     }
                 }
 
-                const result = await generateImage(parts);
+                const result = await generateImage(parts, aspectRatio);
                 if (result) generatedImages.push(result);
             }
             renderResultsGrid('results-grid', 'results-placeholder', 'product-download-all-btn', generatedImages, 'product_showcase', 'aspect-square');
         } catch (err: any) {
             showError(err.message, elements);
-            // Render partial results if any
             if(generatedImages.length > 0) renderResultsGrid('results-grid', 'results-placeholder', 'product-download-all-btn', generatedImages, 'product_showcase', 'aspect-square');
         } finally {
             toggleLoadingState(false, elements);
@@ -442,32 +462,38 @@ if (modelForm) {
     let modelMimeType = "image/jpeg";
     setupFileUploader('model-page-upload-input', 'model-page-image-preview', 'model-page-upload-prompt', (b64, type) => { modelBase64 = b64; modelMimeType = type; });
 
-    const clothingVariations: { [key: string]: string[] } = {
-        "wearing modern casual clothing": [
-            "wearing a white t-shirt and blue jeans", "wearing a denim jacket and black chinos",
-            "wearing a beige oversized hoodie and leggings", "wearing a casual plaid shirt and shorts",
-            "wearing a striped polo shirt and khaki pants", "wearing a leather jacket and grey jeans"
-        ],
-        "wearing a Baju Muslim (Muslim attire)": [
-            "wearing a modern beige Gamis with matching Hijab", "wearing a white Koko shirt and peci",
-            "wearing a floral pattern modest dress", "wearing a stylish tunic and loose trousers"
-        ],
-        "wearing traditional Indonesian attire": [
-            "wearing a Batik shirt with traditional pattern", "wearing a Kebaya with intricate lace details",
-            "wearing a traditional weaving cloth (Tenun) outfit"
-        ],
-        "wearing formal attire": [
-            "wearing a sharp black tuxedo", "wearing an elegant evening gown",
-            "wearing a professional blazer and trousers", "wearing a business formal shirt and tie"
-        ],
-        "wearing non-formal clothing": [
-            "wearing comfortable loungewear", "wearing a simple summer dress",
-            "wearing a tank top and cargo pants"
-        ],
-        "wearing elegant clothing": [
-            "wearing a silk blouse and skirt", "wearing a velvet dress",
-            "wearing a sophisticated suit in navy blue"
-        ]
+    // SPLIT CLOTHING DICTIONARY BY GENDER FOR ACCURACY
+    const clothingVariations: { [key: string]: { male: string[], female: string[], general: string[] } } = {
+        "wearing modern casual clothing": {
+            male: ["wearing a white t-shirt and blue jeans", "wearing a denim jacket and black chinos", "wearing a striped polo shirt and khaki pants", "wearing a casual button-down shirt and shorts", "wearing a leather jacket and grey jeans"],
+            female: ["wearing a white t-shirt and blue jeans", "wearing a beige oversized hoodie and leggings", "wearing a casual floral blouse and jeans", "wearing a denim jacket over a sundress", "wearing a cute crop top and high-waisted pants"],
+            general: ["wearing modern casual clothing"]
+        },
+        "wearing a Baju Muslim (Muslim attire)": {
+            male: ["wearing a white Koko shirt and peci", "wearing a modern batik koko shirt", "wearing a long robe (Jubba) in neutral colors", "wearing a stylish kurta shirt and trousers"],
+            female: ["wearing a modern beige Gamis with matching Hijab", "wearing a floral pattern modest dress with hijab", "wearing a stylish tunic and loose trousers with hijab", "wearing an abaya with gold embroidery"],
+            general: ["wearing modest Muslim attire"]
+        },
+        "wearing traditional Indonesian attire": {
+            male: ["wearing a Batik shirt with traditional Parang pattern", "wearing a Javanese Beskap outfit", "wearing a traditional weaving cloth (Tenun) shirt"],
+            female: ["wearing a Kebaya with intricate lace details and Batik skirt", "wearing a traditional weaving cloth (Tenun) outfit", "wearing a modern Kebaya Encim"],
+            general: ["wearing traditional Indonesian attire"]
+        },
+        "wearing formal attire": {
+            male: ["wearing a sharp black tuxedo", "wearing a navy blue business suit with tie", "wearing a charcoal grey blazer and dress pants", "wearing a crisp white dress shirt and black tie"],
+            female: ["wearing an elegant evening gown", "wearing a professional blazer and trousers", "wearing a cocktail dress", "wearing a chic business suit"],
+            general: ["wearing formal attire"]
+        },
+        "wearing non-formal clothing": {
+            male: ["wearing comfortable loungewear", "wearing a simple tank top and cargo pants", "wearing oversized streetwear"],
+            female: ["wearing a simple summer dress", "wearing comfortable loungewear", "wearing a tank top and cargo pants"],
+            general: ["wearing non-formal clothing"]
+        },
+        "wearing elegant clothing": {
+            male: ["wearing a sophisticated suit in navy blue", "wearing a velvet dinner jacket", "wearing a high-end designer shirt"],
+            female: ["wearing a silk blouse and skirt", "wearing a velvet dress", "wearing a designer gown with jewelry"],
+            general: ["wearing elegant clothing"]
+        }
     };
 
     modelForm.addEventListener('submit', async (e) => {
@@ -476,47 +502,79 @@ if (modelForm) {
 
         const elements = {
             btn: document.getElementById('model-page-generate-btn')!,
-            loader: document.getElementById('model-page-status')!, // Reusing status container as loader wrapper
-            placeholder: { classList: { add: () => {}, remove: () => {} } } as HTMLElement, // Mock since model page uses status container logic
+            loader: document.getElementById('model-page-loader')!,
+            placeholder: document.getElementById('model-page-placeholder')!,
             grid: document.getElementById('model-page-output-container')!,
-            errorMsg: { classList: { add: () => {}, remove: () => {} } } as HTMLElement,
+            errorMsg: document.getElementById('model-page-error-msg')!,
+            errorDetails: document.getElementById('model-page-error-details')!,
             downloadBtn: document.getElementById('model-download-all-btn')!
         };
 
-        // Custom loading logic for Model Page to match UI
-        elements.btn.setAttribute('disabled', 'true');
-        elements.loader.classList.remove('hidden');
-        elements.grid.classList.add('hidden');
-        elements.loader.innerHTML = `<div class="text-center text-slate-600"><div class="spinner w-12 h-12 mx-auto rounded-full border-4 border-slate-300"></div><p class="mt-4 text-lg">Menghasilkan foto model...</p></div>`;
-
+        toggleLoadingState(true, elements, "Menghasilkan foto model...");
         const generatedImages: string[] = [];
+
         try {
             const count = parseInt((document.getElementById('model-image-count') as HTMLSelectElement).value, 10);
             const photoType = (document.getElementById('model-photo-type') as HTMLSelectElement).value;
             const pose = (document.getElementById('model-page-pose') as HTMLSelectElement).value;
             const focus = (document.getElementById('model-page-focus') as HTMLSelectElement).value;
             const selectedClothingCategory = (document.getElementById('model-page-clothing') as HTMLSelectElement).value;
+            const aspectRatio = (document.getElementById('model-aspect-ratio') as HTMLSelectElement).value;
+            const genderSelection = (document.getElementById('model-gender') as HTMLSelectElement).value;
+
+            // Update grid CSS based on aspect ratio
+            const aspectMap: {[key:string]: string} = { 
+                '1:1': 'aspect-square', 
+                '3:4': 'aspect-[3/4]', 
+                '9:16': 'aspect-[9/16]', 
+                '16:9': 'aspect-[16/9]' 
+            };
+            const currentAspectClass = aspectMap[aspectRatio] || 'aspect-square';
+
+            // Apply styles to grid container to ensure cards look right
+            elements.grid.className = `w-full grid grid-cols-2 sm:grid-cols-3 gap-4 p-4`;
 
             for (let i = 0; i < count; i++) {
-                // VARIATION LOGIC: Pick random specific clothing from dictionary
-                const specificClothing = clothingVariations[selectedClothingCategory] 
-                    ? clothingVariations[selectedClothingCategory][Math.floor(Math.random() * clothingVariations[selectedClothingCategory].length)]
-                    : selectedClothingCategory;
+                let specificClothing = "";
+                const categoryData = clothingVariations[selectedClothingCategory];
+
+                // GENDER LOGIC
+                if (categoryData) {
+                    if (genderSelection === 'man') {
+                        // Explicitly pick from Male list
+                        specificClothing = categoryData.male[Math.floor(Math.random() * categoryData.male.length)];
+                    } else if (genderSelection === 'woman') {
+                        // Explicitly pick from Female list
+                        specificClothing = categoryData.female[Math.floor(Math.random() * categoryData.female.length)];
+                    } else {
+                        // AUTO: Use a smart prompt construction
+                        // We pick one random male item and one random female item to suggest to the AI
+                        const randMale = categoryData.male[Math.floor(Math.random() * categoryData.male.length)];
+                        const randFemale = categoryData.female[Math.floor(Math.random() * categoryData.female.length)];
+                        
+                        // Construct a prompt that forces the AI to choose based on visual analysis
+                        specificClothing = `Analyze the gender of the person in the image. IF THE PERSON IS MALE, they should be ${randMale}. IF THE PERSON IS FEMALE, they should be ${randFemale}. Ensure the clothing style matches the detected gender perfectly.`;
+                    }
+                } else {
+                    specificClothing = selectedClothingCategory;
+                }
 
                 const prompt = `A ${photoType} of the person in the provided image. They should be in a ${pose} pose, ${specificClothing}. The photo must be a ${focus}. The final image should have the exact same facial features as the original image.`;
                 
                 const parts = [{ text: prompt }, { inlineData: { mimeType: modelMimeType, data: modelBase64 } }];
-                const result = await generateImage(parts);
+                const result = await generateImage(parts, aspectRatio);
                 if (result) generatedImages.push(result);
             }
-            renderResultsGrid('model-page-output-container', 'mock-id', 'model-download-all-btn', generatedImages, 'model_photo', 'aspect-square');
+            renderResultsGrid('model-page-output-container', 'model-page-placeholder', 'model-download-all-btn', generatedImages, 'model_photo', currentAspectClass, 'object-cover');
         } catch (err: any) {
             console.error(err);
-            if(generatedImages.length > 0) renderResultsGrid('model-page-output-container', 'mock-id', 'model-download-all-btn', generatedImages, 'model_photo', 'aspect-square');
+            showError(err.message, elements);
+            // Try to render what we have
+            const aspectRatio = (document.getElementById('model-aspect-ratio') as HTMLSelectElement).value;
+            const aspectMap: {[key:string]: string} = { '1:1': 'aspect-square', '3:4': 'aspect-[3/4]', '9:16': 'aspect-[9/16]', '16:9': 'aspect-[16/9]' };
+            if(generatedImages.length > 0) renderResultsGrid('model-page-output-container', 'model-page-placeholder', 'model-download-all-btn', generatedImages, 'model_photo', aspectMap[aspectRatio], 'object-cover');
         } finally {
-            elements.btn.removeAttribute('disabled');
-            elements.loader.classList.add('hidden');
-            elements.grid.classList.remove('hidden');
+            toggleLoadingState(false, elements);
         }
     });
 }
@@ -545,7 +603,11 @@ if (pasPhotoForm) {
         toggleLoadingState(true, elements, "Memproses foto...");
         const generatedImages: string[] = [];
         const photoSize = (document.getElementById('pas-photo-size') as HTMLSelectElement).value;
-        const aspectMap: {[key:string]: string} = { '2x3': 'aspect-[2/3]', '3x4': 'aspect-[3/4]', '4x6': 'aspect-[4/6]' };
+        // Map Pas Photo sizes to approximate aspect ratios
+        const aspectMap: {[key:string]: string} = { '2x3': 'aspect-[2/3]', '3x4': 'aspect-[3/4]', '4x6': 'aspect-[2/3]' };
+        // For API config, we map to closest standard or default to 1:1 if unsure, but prompt handles cropping usually.
+        // 2x3 is 2:3. 3:4 is supported. 
+        const apiRatioMap: {[key:string]: string} = { '2x3': '3:4', '3x4': '3:4', '4x6': '3:4' }; 
 
         try {
             const count = parseInt((document.getElementById('pas-photo-image-count') as HTMLSelectElement).value, 10);
@@ -555,7 +617,7 @@ if (pasPhotoForm) {
             for (let i = 0; i < count; i++) {
                 const prompt = `Passport photo. Background color: ${bgColor}. Attire: ${attire}. Size ratio: ${photoSize}. Preserve face 100%.`;
                 const parts = [{ text: prompt }, { inlineData: { mimeType: pasMimeType, data: pasBase64 } }];
-                const result = await generateImage(parts);
+                const result = await generateImage(parts, apiRatioMap[photoSize] || '3:4');
                 if (result) generatedImages.push(result);
             }
             renderResultsGrid('pas-photo-results-grid', 'pas-photo-results-placeholder', 'pas-photo-download-all-btn', generatedImages, 'pas_photo', aspectMap[photoSize] || 'aspect-[3/4]', 'object-cover');
@@ -614,19 +676,27 @@ if (travelForm) {
             const count = parseInt((document.getElementById('travel-image-count') as HTMLSelectElement).value, 10);
             const bg = (document.getElementById('travel-bg-select') as HTMLSelectElement).value;
             const season = (document.getElementById('travel-season-select') as HTMLSelectElement).value;
+            const aspectRatio = (document.getElementById('travel-aspect-ratio') as HTMLSelectElement).value;
+
+             // Map Aspect Ratio
+             const aspectMap: {[key:string]: string} = { '1:1': 'aspect-square', '3:4': 'aspect-[3/4]', '9:16': 'aspect-[9/16]', '16:9': 'aspect-[16/9]' };
 
             for (let i = 0; i < count; i++) {
                 const prompt = `Travel photo. Location: ${bg}. Season: ${season}. Integrate ${activeFiles.length} people. Preserve faces 100%.`;
                 const parts: any[] = [{ text: prompt }];
                 activeFiles.forEach(f => parts.push({ inlineData: { mimeType: f!.mimeType, data: f!.base64 } }));
                 
-                const result = await generateImage(parts);
+                const result = await generateImage(parts, aspectRatio);
                 if (result) generatedImages.push(result);
             }
-            renderResultsGrid('travel-results-grid', 'travel-results-placeholder', 'travel-download-all-btn', generatedImages, 'travel_photo', 'aspect-[4/5]', 'object-cover');
+            renderResultsGrid('travel-results-grid', 'travel-results-placeholder', 'travel-download-all-btn', generatedImages, 'travel_photo', aspectMap[aspectRatio], 'object-cover');
         } catch (err: any) {
             showError(err.message, elements);
-            if(generatedImages.length > 0) renderResultsGrid('travel-results-grid', 'travel-results-placeholder', 'travel-download-all-btn', generatedImages, 'travel_photo', 'aspect-[4/5]', 'object-cover');
+            if(generatedImages.length > 0) {
+                 const aspectRatio = (document.getElementById('travel-aspect-ratio') as HTMLSelectElement).value;
+                 const aspectMap: {[key:string]: string} = { '1:1': 'aspect-square', '3:4': 'aspect-[3/4]', '9:16': 'aspect-[9/16]', '16:9': 'aspect-[16/9]' };
+                renderResultsGrid('travel-results-grid', 'travel-results-placeholder', 'travel-download-all-btn', generatedImages, 'travel_photo', aspectMap[aspectRatio], 'object-cover');
+            }
         } finally {
             toggleLoadingState(false, elements);
         }
@@ -648,7 +718,7 @@ if (preweddingForm) {
         document.getElementById('prewedding-delete-btn-b')?.classList.remove('hidden');
     });
 
-    // Handle delete buttons (simplified)
+    // Handle delete buttons
     ['a', 'b'].forEach(key => {
         document.getElementById(`prewedding-delete-btn-${key}`)?.addEventListener('click', (e) => {
             e.preventDefault(); e.stopPropagation();
@@ -692,6 +762,8 @@ if (preweddingForm) {
             const isOutdoor = (document.getElementById('prewedding-location-type-outdoor') as HTMLInputElement).checked;
             const loc = (document.getElementById(isOutdoor ? 'prewedding-location-outdoor-select' : 'prewedding-location-indoor-select') as HTMLSelectElement).value;
             const attire = (document.getElementById('prewedding-attire-select') as HTMLSelectElement).value;
+            const aspectRatio = (document.getElementById('prewedding-aspect-ratio') as HTMLSelectElement).value;
+            const aspectMap: {[key:string]: string} = { '1:1': 'aspect-square', '3:4': 'aspect-[3/4]', '9:16': 'aspect-[9/16]', '16:9': 'aspect-[16/9]' };
 
             for (let i = 0; i < count; i++) {
                 const prompt = `Prewedding photo of couple. Location: ${loc}. Attire: ${attire}. Romantic pose. Preserve faces 100%.`;
@@ -700,13 +772,17 @@ if (preweddingForm) {
                     { inlineData: { mimeType: fileA!.mimeType, data: fileA!.base64 } },
                     { inlineData: { mimeType: fileB!.mimeType, data: fileB!.base64 } }
                 ];
-                const result = await generateImage(parts);
+                const result = await generateImage(parts, aspectRatio);
                 if (result) generatedImages.push(result);
             }
-            renderResultsGrid('prewedding-results-grid', 'prewedding-results-placeholder', 'prewedding-download-all-btn', generatedImages, 'prewedding_photo', 'aspect-[4/5]', 'object-cover');
+            renderResultsGrid('prewedding-results-grid', 'prewedding-results-placeholder', 'prewedding-download-all-btn', generatedImages, 'prewedding_photo', aspectMap[aspectRatio], 'object-cover');
         } catch (err: any) {
             showError(err.message, elements);
-            if(generatedImages.length > 0) renderResultsGrid('prewedding-results-grid', 'prewedding-results-placeholder', 'prewedding-download-all-btn', generatedImages, 'prewedding_photo', 'aspect-[4/5]', 'object-cover');
+            if(generatedImages.length > 0) {
+                const aspectRatio = (document.getElementById('prewedding-aspect-ratio') as HTMLSelectElement).value;
+                const aspectMap: {[key:string]: string} = { '1:1': 'aspect-square', '3:4': 'aspect-[3/4]', '9:16': 'aspect-[9/16]', '16:9': 'aspect-[16/9]' };
+                renderResultsGrid('prewedding-results-grid', 'prewedding-results-placeholder', 'prewedding-download-all-btn', generatedImages, 'prewedding_photo', aspectMap[aspectRatio], 'object-cover');
+            }
         } finally {
             toggleLoadingState(false, elements);
         }
